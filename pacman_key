@@ -1,0 +1,107 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+# ansible-pacman-key
+# Copyright (C) 2016  Kazutoshi Noguchi
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+DOCUMENTATION='''
+---
+module: pacman_key
+author: "Kazutoshi Noguchi <noguchi.kazutosi+TH0mg4HQ@gmail.com>"
+short_description: Add or remove a gpg key to the pacman keyring
+description:
+    - Add(pacman-key -r && pacman-key --lsign-key) or remove(pacman-key -d) a gpg key to the pacman keyring
+options:
+    id:
+        required: true
+        description:
+            - identifier of key.
+    state:
+        required: false
+        choices: [present, absent]
+        default: present
+        description:
+            - Whether the key will be added or removed from the pacman keyring.
+'''
+
+EXAMPLES='''
+# Add a key to the pacman keyring
+- pacman_key: id=A9244FB5E93F11F0E975337FAE6866C7962DDE58 state=present
+
+# Remove a key from the pacman keyring
+- pacman_key: id=A9244FB5E93F11F0E975337FAE6866C7962DDE58 state=absent
+'''
+
+from ansible.module_utils.basic import *
+
+def has_key(module, key_id):
+    cmd = ['pacman-key', '-f', key_id]
+    rc, _, _ = module.run_command(cmd, check_rc=False)
+    return rc == 0
+
+def add_key(module, key_id):
+    if has_key(module, key_id):
+        module.exit_json(changed=False, msg='the key already exists in the pacman keyring')
+
+    if module.check_mode:
+        module.exit_json(changed=True)
+
+    cmd = ['pacman-key', '-r', key_id]
+    rc, out_retrive, err_retrive = module.run_command(cmd, check_rc=True)
+
+    cmd = ['pacman-key', '--lsign-key', key_id]
+    rc, out_lsign, err_lsign = module.run_command(cmd, check_rc=True)
+
+    module.exit_json(
+            changed=True,
+            msg=out_retrive + "\n" + out_lsign,
+            stdout=out_retrive + "\n" + out_lsign,
+            stderr=err_retrive + "\n" + err_lsign)
+
+def remove_key(module, key_id):
+    if not has_key(module, key_id):
+        module.exit_json(changed=False, msg='there is not the key in the pacman keyring')
+
+    if module.check_mode:
+        module.exit_json(changed=True)
+
+    cmd = ['pacman-key', '-d', key_id]
+    rc, out, err = module.run_command(cmd, check_rc=True)
+    module.exit_json(changed=True, msg=out, stdout=out, stderr=err)
+
+def main():
+    module = AnsibleModule(
+        argument_spec={
+            'state': {
+                'default': 'present',
+                'choices': ['present', 'absent'],
+            },
+            'id': {
+                'required': True,
+            }
+        },
+        supports_check_mode = True
+    )
+
+    params = module.params
+
+    if params['state'] == 'present':
+        add_key(module, params['id'])
+    elif params['state'] == 'absent':
+        remove_key(module, params['id'])
+
+if __name__ == '__main__':
+    main()
